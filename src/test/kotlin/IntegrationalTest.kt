@@ -11,17 +11,23 @@ class IntegrationalTest {
     lateinit var tempDir: Path
 
     private lateinit var table: Table
+    private lateinit var cp: CommandProcessor
+    private lateinit var se: StatementExecutor
 
     @BeforeEach
     fun setUp() {
         val db = tempDir.resolve("test.db").toString()
         table = dbOpen(db)
+        se = StatementExecutor()
+        cp = CommandProcessor(
+            statementExecutor = se
+        )
     }
 
     @Test
     fun `all inserted rows can be found after split`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -38,13 +44,13 @@ class IntegrationalTest {
     @Test
     fun `insert after split`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
         }
 
-        processCommand(
+        cp.processCommand(
             "insert ${LEAF_NODE_MAX_CELLS + 2} ux ex",
             table
         )
@@ -58,13 +64,13 @@ class IntegrationalTest {
     @Test
     fun `insert in middle after split`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${(it + 1) * 2} u e",
                 table
             )
         }
 
-        processCommand("insert 5 five five", table)
+        cp.processCommand("insert 5 five five", table)
 
         val row = deserializeRow(tableFind(table, 5))
 
@@ -74,7 +80,7 @@ class IntegrationalTest {
     @Test
     fun `insert 100 sequential keys`() {
         repeat(100) {
-            processCommand("insert ${it + 1} u${it + 1} e${it + 1}", table)
+            cp.processCommand("insert ${it + 1} u${it + 1} e${it + 1}", table)
         }
 
         repeat(100) {
@@ -87,7 +93,7 @@ class IntegrationalTest {
     @Test
     fun `select after root split starts from smallest key`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -104,7 +110,7 @@ class IntegrationalTest {
     @Test
     fun `select returns all inserted rows after root split`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -134,7 +140,7 @@ class IntegrationalTest {
     @Test
     fun `select returns 100 rows in order`() {
         repeat(100) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -160,7 +166,7 @@ class IntegrationalTest {
     fun `parent is updated after second leaf split`() {
 
         repeat(LEAF_NODE_MAX_CELLS * 2 + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -189,7 +195,7 @@ class IntegrationalTest {
     fun `three leaf nodes are linked after second split`() {
 
         repeat(LEAF_NODE_MAX_CELLS * 2 + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -210,7 +216,7 @@ class IntegrationalTest {
     fun `select returns all rows after second leaf split`() {
 
         repeat(LEAF_NODE_MAX_CELLS * 2 + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -235,7 +241,7 @@ class IntegrationalTest {
     @Test
     fun `internal node split creates new root`() {
         repeat(LEAF_NODE_MAX_CELLS * 4 + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -258,7 +264,7 @@ class IntegrationalTest {
         val total = LEAF_NODE_MAX_CELLS * 4 + 10
 
         repeat(total) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -285,7 +291,7 @@ class IntegrationalTest {
         val total = LEAF_NODE_MAX_CELLS * 4 + 10
 
         repeat(total) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -310,14 +316,14 @@ class IntegrationalTest {
     @Test
     fun `tree height becomes three after internal split`() {
         repeat(LEAF_NODE_MAX_CELLS * 4 + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
         }
 
         val root = table.pager.getPage(0)
-        dumpTree(table,table.rootPageNum)
+        cp.dumpTree(table,table.rootPageNum)
         val leftInternal =
             table.pager.getPage(getInternalNodeChild(root, 0))
 

@@ -1,11 +1,12 @@
 import com.zxcjabka.game.COLUMN_EMAIL
 import com.zxcjabka.game.COLUMN_USERNAME
+import com.zxcjabka.game.CommandProcessor
 import com.zxcjabka.game.INTERNAL_NODE_MAX_CELLS
+import com.zxcjabka.game.StatementExecutor
 import com.zxcjabka.game.Table
 import com.zxcjabka.game.dbOpen
 import com.zxcjabka.game.deserializeRow
 import com.zxcjabka.game.flush
-import com.zxcjabka.game.processCommand
 import com.zxcjabka.game.tableFind
 import com.zxcjabka.game.tableStart
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -22,18 +23,24 @@ class E2ETest {
     lateinit var tempDir: Path
 
     private lateinit var table: Table
+    private lateinit var cp: CommandProcessor
+    private lateinit var se: StatementExecutor
 
     @BeforeEach
     fun setUp() {
         val db = tempDir.resolve("test.db").toString()
         table = dbOpen(db)
+        se = StatementExecutor()
+        cp = CommandProcessor(
+            statementExecutor = se
+        )
     }
 
     @Test
     fun `e2e database persistence after file restart`() {
         val rowsCount = 15
         repeat(rowsCount) {
-            processCommand("insert ${it + 1} user${it + 1} email${it + 1}@db.com", table)
+            cp.processCommand("insert ${it + 1} user${it + 1} email${it + 1}@db.com", table)
         }
 
         flush(table)
@@ -58,7 +65,7 @@ class E2ETest {
         val maxUsername = "u".repeat(COLUMN_USERNAME)
         val maxEmail = "e".repeat(COLUMN_EMAIL)
 
-        processCommand("insert 999 $maxUsername $maxEmail", table)
+        cp.processCommand("insert 999 $maxUsername $maxEmail", table)
 
         val cursor = tableFind(table, 999)
         val row = deserializeRow(cursor)
@@ -76,7 +83,7 @@ class E2ETest {
     fun `e2e order of elements remains sorted when inserting keys out of order`() {
         val keys = listOf(50, 10, 40, 20, 30)
         keys.forEach { id ->
-            processCommand("insert $id user$id mail$id", table)
+            cp.processCommand("insert $id user$id mail$id", table)
         }
 
         val cursor = tableStart(table)

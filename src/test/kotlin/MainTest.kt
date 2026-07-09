@@ -12,17 +12,25 @@ class MainTest {
     lateinit var tempDir: Path
 
     private lateinit var table: Table
+    private lateinit var cp: CommandProcessor
+    private lateinit var se: StatementExecutor
 
     @BeforeEach
     fun setUp() {
         val db = tempDir.resolve("test.db").toString()
         table = dbOpen(db)
+        se = StatementExecutor()
+        cp = CommandProcessor(
+            statementExecutor = se
+        )
     }
+
+
 
     @Test
     fun `insert and select`() {
-        processCommand("insert 1 fofo baba", table)
-        processCommand("insert 2 foo bar", table)
+        cp.processCommand("insert 1 fofo baba", table)
+        cp.processCommand("insert 2 foo bar", table)
 
         val cursor = tableStart(table)
 
@@ -47,8 +55,8 @@ class MainTest {
 
     @Test
     fun `leaf node count increases after insert`() {
-        processCommand("insert 1 foo bar", table)
-        processCommand("insert 2 baz qaz", table)
+        cp.processCommand("insert 1 foo bar", table)
+        cp.processCommand("insert 2 baz qaz", table)
 
         val page = table.pager.getPage(0)
 
@@ -66,8 +74,8 @@ class MainTest {
 
     @Test
     fun `table end points after last cell`() {
-        processCommand("insert 1 foo bar", table)
-        processCommand("insert 2 baz qaz", table)
+        cp.processCommand("insert 1 foo bar", table)
+        cp.processCommand("insert 2 baz qaz", table)
 
         val cursor = tableEnd(table)
 
@@ -78,8 +86,8 @@ class MainTest {
 
     @Test
     fun `cursor advances correctly`() {
-        processCommand("insert 1 foo bar", table)
-        processCommand("insert 2 baz qaz", table)
+        cp.processCommand("insert 1 foo bar", table)
+        cp.processCommand("insert 2 baz qaz", table)
 
         val cursor = tableStart(table)
 
@@ -95,8 +103,8 @@ class MainTest {
 
     @Test
     fun `keys are written correctly`() {
-        processCommand("insert 10 foo bar", table)
-        processCommand("insert 20 baz qaz", table)
+        cp.processCommand("insert 10 foo bar", table)
+        cp.processCommand("insert 20 baz qaz", table)
 
         val page = table.pager.getPage(0)
 
@@ -113,7 +121,7 @@ class MainTest {
     @Test
     fun `fill leaf node`() {
         repeat(LEAF_NODE_MAX_CELLS) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} user${it + 1} email${it + 1}",
                 table
             )
@@ -130,13 +138,13 @@ class MainTest {
     @Test
     fun `leaf split creates correct tree`() {
         repeat(LEAF_NODE_MAX_CELLS) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
         }
 
-        processCommand(
+        cp.processCommand(
             "insert ${LEAF_NODE_MAX_CELLS + 1} u e",
             table
         )
@@ -175,7 +183,7 @@ class MainTest {
     @Test
     fun `all keys survive split`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -208,7 +216,7 @@ class MainTest {
     @Test
     fun `split root creates internal root`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -224,7 +232,7 @@ class MainTest {
     @Test
     fun `old root copied into left child`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -243,7 +251,7 @@ class MainTest {
     @Test
     fun `right leaf created correctly`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -262,7 +270,7 @@ class MainTest {
     @Test
     fun `find after root split`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -278,7 +286,7 @@ class MainTest {
     @Test
     fun `find returns correct row after split`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -294,7 +302,7 @@ class MainTest {
     @Test
     fun `internal node find chooses correct child`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -320,7 +328,7 @@ class MainTest {
     @Test
     fun `internal node find returns correct page for every key`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -347,13 +355,13 @@ class MainTest {
     @Test
     fun `insert into left leaf after root split keeps order`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 10} u${it + 10} e${it + 10}",
                 table
             )
         }
 
-        processCommand("insert 5 u5 e5", table)
+        cp.processCommand("insert 5 u5 e5", table)
 
         val cursor = tableStart(table)
 
@@ -368,13 +376,13 @@ class MainTest {
     @Test
     fun `insert into right leaf after root split keeps order`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
         }
 
-        processCommand("insert 100 u100 e100", table)
+        cp.processCommand("insert 100 u100 e100", table)
 
         val cursor = tableFind(table, 100)
 
@@ -385,7 +393,7 @@ class MainTest {
     @Test
     fun `leaf linked list contains all pages after multiple inserts`() {
         repeat(LEAF_NODE_MAX_CELLS * 2 + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -410,7 +418,7 @@ class MainTest {
         )
 
         ids.forEach {
-            processCommand(
+            cp.processCommand(
                 "insert $it u$it e$it",
                 table
             )
@@ -435,7 +443,7 @@ class MainTest {
     @Test
     fun `find nonexistent key returns insertion position`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -452,12 +460,12 @@ class MainTest {
 
     @Test
     fun `duplicate key is not inserted`() {
-        processCommand(
+        cp.processCommand(
             "insert 1 user email",
             table
         )
 
-        processCommand(
+        cp.processCommand(
             "insert 1 user2 email2",
             table
         )
@@ -478,7 +486,7 @@ class MainTest {
     @Test
     fun `parent pointer set after root split`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -504,7 +512,7 @@ class MainTest {
     @Test
     fun `leaf split keeps all original rows`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -530,13 +538,13 @@ class MainTest {
     @Test
     fun `insert after split does not corrupt existing pages`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
         }
 
-        processCommand(
+        cp.processCommand(
             "insert 100 u100 e100",
             table
         )
@@ -560,7 +568,7 @@ class MainTest {
     @Test
     fun `all leaves have correct node type after two splits`() {
         repeat(LEAF_NODE_MAX_CELLS * 2 + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -591,7 +599,7 @@ class MainTest {
     @Test
     fun `root remains internal after second split`() {
         repeat(LEAF_NODE_MAX_CELLS * 2 + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
@@ -610,12 +618,12 @@ class MainTest {
     @Test
     fun `dump tree`(){
         repeat(LEAF_NODE_MAX_CELLS * 3 + 1) {
-            processCommand(
+            cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
         }
 
-        dumpTree(table, 0)
+        cp.dumpTree(table, 0)
     }
 }
