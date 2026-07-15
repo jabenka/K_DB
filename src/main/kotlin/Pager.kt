@@ -12,7 +12,7 @@ data class Pager(
         ((file.length() - HEADER_SIZE).coerceAtLeast(0) / PAGE_SIZE).toInt()
 
     fun getPage(pageNum: Int): ByteArray {
-        if (pageNum !in 0..TABLE_MAX_PAGES) {
+        if (pageNum !in 0 until TABLE_MAX_PAGES) {
             exitProcess(-1)
         }
         pages[pageNum]?.let { return it }

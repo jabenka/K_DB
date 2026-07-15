@@ -323,7 +323,7 @@ class IntegrationalTest {
         }
 
         val root = table.pager.getPage(0)
-        cp.dumpTree(table,table.rootPageNum)
+        dumpTree(table,table.rootPageNum)
         val leftInternal =
             table.pager.getPage(getInternalNodeChild(root, 0))
 
