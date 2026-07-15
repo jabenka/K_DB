@@ -623,7 +623,160 @@ class MainTest {
                 table
             )
         }
+        dumpTree(table, 0)
+    }
 
-        cp.dumpTree(table, 0)
+    @Test
+    fun `delete leaf row`() {
+        repeat(5){
+            cp.processCommand(
+                "insert ${it + 1} u${it + 1} e${it + 1}",
+                table
+            )
+        }
+        cp.processCommand("delete 3",table)
+        val node = table.pager.getPage(0)
+        assertEquals(4,getLeafNodeNumCells(node))
+    }
+
+    @Test
+    fun `delete first row in leaf `() {
+        repeat(5){
+            cp.processCommand(
+                "insert ${it + 1} u${it + 1} e${it + 1}",
+                table
+            )
+        }
+        cp.processCommand("delete 1",table)
+        val node = table.pager.getPage(0)
+        assertEquals(4,getLeafNodeNumCells(node))
+    }
+
+    @Test
+    fun `delete last row in leaf `() {
+        repeat(5){
+            cp.processCommand(
+                "insert ${it + 1} u${it + 1} e${it + 1}",
+                table
+            )
+        }
+        cp.processCommand("delete 5",table)
+        val node = table.pager.getPage(0)
+        assertEquals(4,getLeafNodeNumCells(node))
+    }
+
+    @Test
+    fun `delete several rows in leaf `() {
+        val insertCount = 5
+        val deleteCount = 3
+        repeat(insertCount){
+            cp.processCommand(
+                "insert ${it + 1} u${it + 1} e${it + 1}",
+                table
+            )
+        }
+        repeat(deleteCount){
+            cp.processCommand("delete ${it+1}",table)
+        }
+        val node = table.pager.getPage(0)
+        assertEquals(insertCount - deleteCount,getLeafNodeNumCells(node))
+    }
+
+    @Test
+    fun `delete max row in leaf check parent`() {
+        val insertCount = 20
+        repeat(insertCount){
+            cp.processCommand(
+                "insert ${it + 1} u${it + 1} e${it + 1}",
+                table
+            )
+        }
+        cp.processCommand("delete 7",table)
+        dumpTree(table, 0)
+    }
+
+    private fun scanIds(): List<Int> {
+        val ids = mutableListOf<Int>()
+        val cursor = tableStart(table)
+        while (!cursor.endOfTable) {
+            ids += deserializeRow(cursor).Id
+            cursor.cursorAdvance()
+        }
+        return ids
+    }
+
+    @Test
+    fun `stress delete keeps tree consistent`() {
+        // n подобран так, чтобы дерево укладывалось в TABLE_MAX_PAGES (=100):
+        // фанауты узлов в этой toy-БД маленькие, а страницы при вставке не переиспользуются.
+        val n = 200
+        for (i in 1..n) {
+            cp.processCommand("insert $i u$i e$i", table)
+        }
+
+        val remaining = (1..n).toMutableList()
+        val toDelete = (1..n).shuffled(kotlin.random.Random(42))
+
+        for (id in toDelete) {
+            cp.processCommand("delete $id", table)
+            remaining.remove(id)
+            assertEquals(
+                remaining.sorted(),
+                scanIds(),
+                "mismatch after deleting $id"
+            )
+        }
+
+        assertTrue(scanIds().isEmpty())
+    }
+
+    @Test
+    fun `delete then reinsert works`() {
+        val n = 100
+        for (i in 1..n) cp.processCommand("insert $i u$i e$i", table)
+        for (i in 1..n) cp.processCommand("delete $i", table)
+        assertTrue(scanIds().isEmpty())
+        for (i in 1..n) cp.processCommand("insert $i u$i e$i", table)
+        assertEquals((1..n).toList(), scanIds())
+    }
+
+    @Test
+    fun `delete rebalances by borrowing from right`() {
+        repeat(LEAF_NODE_MAX_CELLS + 2) {
+            cp.processCommand(
+                "insert ${it + 1} u${it + 1} e${it + 1}",
+                table
+            )
+        }
+
+        cp.processCommand("delete 7", table)
+
+        val root = table.pager.getPage(table.rootPageNum)
+
+        val left =
+            table.pager.getPage(getInternalNodeChild(root, 0))
+
+        val right =
+            table.pager.getPage(getRightChild(root))
+
+        assertEquals(7, getLeafNodeNumCells(left))
+        assertEquals(7, getLeafNodeNumCells(right))
+
+        val ids = mutableListOf<Int>()
+
+        val cursor = tableStart(table)
+
+        while (!cursor.endOfTable) {
+            ids += deserializeRow(cursor).Id
+            cursor.cursorAdvance()
+        }
+
+        assertEquals(
+            listOf(
+                1,2,3,4,5,6,
+                8,9,10,11,12,13,14,15
+            ),
+            ids
+        )
     }
 }

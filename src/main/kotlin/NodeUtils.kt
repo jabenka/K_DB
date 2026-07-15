@@ -70,6 +70,7 @@ const val INTERNAL_NODE_CELL_SIZE =
             INTERNAL_NODE_KEY_SIZE
 
 const val INTERNAL_NODE_MAX_CELLS = 3
+const val INTERNAL_NODE_MIN_KEYS = INTERNAL_NODE_MAX_CELLS / 2
 
 fun initializeLeafNode(page: ByteArray) {
     setNodeType(page, NodeType.NODE_LEAF)
@@ -154,7 +155,6 @@ fun getInternalNodeChild(page: ByteArray, childNum: Int): Int {
 
 fun setInternalNodeChild(page: ByteArray, index: Int, childPageNum: Int) {
     if (childPageNum == 0) {
-        println("WRITE ZERO CHILD! index=$index")
         Exception().printStackTrace()
     }
     val offset = INTERNAL_NODE_HEADER_SIZE + index * INTERNAL_NODE_CELL_SIZE
@@ -201,12 +201,24 @@ fun setLeafNextLeafNode(page: ByteArray, nextLeafNode: Int) {
 
 fun internalNodeCell(i: Int): Int {
     return INTERNAL_NODE_HEADER_SIZE + i * INTERNAL_NODE_CELL_SIZE
-
 }
 
 fun updateInternalNodeKey(parent: ByteArray, oldMax: Int, newMax: Int) {
     val oldChildIndex = internalNodeFindChild(parent, oldMax)
     setInternalNodeKey(parent, oldChildIndex, newMax)
+}
+
+fun updateNodeMaxInParent(pager: Pager, childPageNum: Int, newMax: Int) {
+    val child = pager.getPage(childPageNum)
+    if (getIsRoot(child)) return
+    val parentPageNum = getParent(child)
+    val parent = pager.getPage(parentPageNum)
+    val idx = findChildIndex(parent, childPageNum) ?: return
+    if (idx == getInternalNodeNumKeys(parent)) {
+        updateNodeMaxInParent(pager, parentPageNum, newMax)
+    } else {
+        setInternalNodeKey(parent, idx, newMax)
+    }
 }
 
 fun createNewRoot(table: Table, rightChildPageNum: Int) {
@@ -315,6 +327,30 @@ fun shiftCells(numCells: Int, page: ByteArray, cursor: Cursor) {
         )
     }
 
+}
+
+fun collapseRoot(table: Table, root: ByteArray) {
+    val onlyChildPageNum = getRightChild(root)
+    val onlyChild = table.pager.getPage(onlyChildPageNum)
+    System.arraycopy(onlyChild, 0, root, 0, PAGE_SIZE)
+    setIsRoot(root, true)
+    setParent(root, 0)
+    if (getNodeType(root) == NodeType.NODE_INTERNAL) {
+        val numKeys = getInternalNodeNumKeys(root)
+        for (i in 0..numKeys) {
+            setParent(table.pager.getPage(getInternalNodeChild(root, i)), table.rootPageNum)
+        }
+    }
+}
+
+fun findChildIndex(parent: ByteArray, page: Int): Int? {
+    val keys = getInternalNodeNumKeys(parent)
+    for( i in 0..keys){
+        if(getInternalNodeChild(parent, i) == page){
+            return i
+        }
+    }
+    return null
 }
 
 enum class NodeType {

@@ -78,114 +78,116 @@ class CommandProcessor(private val statementExecutor: StatementExecutor) {
     }
 
 
-    fun dumpTree(
-        table: Table,
-        pageNum: Int,
-        indent: String = "",
-    ) {
 
-        val page = table.pager.getPage(pageNum)
-
-        println("$indent=============================================")
-        println("$indent Page num: $pageNum")
-        println("$indent Node type: ${getNodeType(page)}")
-        println("$indent Is root: ${getIsRoot(page)}")
-        println("$indent Parent: ${getParent(page)}")
-        when (getNodeType(page)) {
-            NodeType.NODE_INTERNAL -> {
-                val keys = getInternalNodeNumKeys(page)
-                println("$indent Num keys: $keys")
-                repeat(keys) { i ->
-                    println("$indent Child[$i]: ${getInternalNodeChild(page, i)}  key=${getInternalNodeKey(page, i)}")
-                }
-                println("$indent Right child: ${getRightChild(page)}")
-                println()
-                for (i in 0 until keys) {
-                    println(
-                        "page=$pageNum child[$i]=${getInternalNodeChild(page, i)}"
-                    )
-                    dumpTree(table, getInternalNodeChild(page, i), "$indent   ")
-                }
-                dumpTree(table, getRightChild(page), "$indent   ")
-            }
-
-            NodeType.NODE_LEAF -> {
-                println("$indent Num cells: ${getLeafNodeNumCells(page)}")
-                println("$indent Next leaf: ${getLeafNextLeafNode(page)}")
-                print("$indent Keys: ")
-                repeat(getLeafNodeNumCells(page)) { i ->
-                    print("${getNodeKeyValue(page, i)} ")
-                }
-                println()
-                println("$indent Rows:")
-                repeat(getLeafNodeNumCells(page)) { i ->
-                    println("$indent   ${getRow(page, i)}")
-                }
-            }
-        }
-        println("$indent=============================================")
-    }
-
-    fun dumpPage(table: Table, pageNum: Int) {
-        val page = table.pager.getPage(pageNum)
-        println("=============================================")
-        println("Page num: $pageNum")
-        println("Node type ${getNodeType(page)}")
-        println("Is root ${getIsRoot(page)}")
-        println("Parent node ${ByteBuffer.wrap(page).getInt(PARENT_POINTER_OFFSET)}")
-
-        when (getNodeType(page)) {
-            NodeType.NODE_LEAF -> dumpLeaf(page)
-            NodeType.NODE_INTERNAL -> dumpInternal(page)
-        }
-        println("=============================================")
-    }
-
-    fun dumpInternal(page: ByteArray) {
-        println("Num keys ${getInternalNodeNumKeys(page)}")
-        repeat(getInternalNodeNumKeys(page)) { i ->
-            println("Child: ${getInternalNodeChild(page, i)}")
-            println("Key: ${getInternalNodeKey(page, i)}")
-        }
-    }
-
-    fun dumpLeaf(page: ByteArray) {
-        println("Num cells ${getLeafNodeNumCells(page)}")
-        println("Next leaf ${getLeafNextLeafNode(page)}")
-        repeat(getLeafNodeNumCells(page)) { i ->
-            val row = getRow(page, i)
-            println("Row: $row")
-        }
-    }
-
-    fun getRow(page: ByteArray, cell: Int): Row {
-        val username = ByteArray(USERNAME_SIZE)
-        val email = ByteArray(EMAIL_SIZE)
-
-        val valueOffset = leafNodeCell(cell) + LEAF_NODE_KEY_SIZE
-
-        val id = ByteBuffer.wrap(page).getInt(valueOffset)
-        System.arraycopy(
-            page,
-            valueOffset + USERNAME_OFFSET,
-            username,
-            0,
-            USERNAME_SIZE
-        )
-        System.arraycopy(
-            page,
-            valueOffset + EMAIL_OFFSET,
-            email,
-            0,
-            EMAIL_SIZE
-        )
-        return Row(
-            Id = id,
-            Username = String(username).trimEnd('\u0000'),
-            Email = String(email).trimEnd('\u0000')
-        )
-    }
 
     enum class MetaCommands { META_COMMAND_SUCCESS, META_COMMAND_UNDEFINED }
 
+}
+
+fun dumpTree(
+    table: Table,
+    pageNum: Int,
+    indent: String = "",
+) {
+
+    val page = table.pager.getPage(pageNum)
+
+    println("$indent=============================================")
+    println("$indent Page num: $pageNum")
+    println("$indent Node type: ${getNodeType(page)}")
+    println("$indent Is root: ${getIsRoot(page)}")
+    println("$indent Parent: ${getParent(page)}")
+    when (getNodeType(page)) {
+        NodeType.NODE_INTERNAL -> {
+            val keys = getInternalNodeNumKeys(page)
+            println("$indent Num keys: $keys")
+            repeat(keys) { i ->
+                println("$indent Child[$i]: ${getInternalNodeChild(page, i)}  key=${getInternalNodeKey(page, i)}")
+            }
+            println("$indent Right child: ${getRightChild(page)}")
+            println()
+            for (i in 0 until keys) {
+                println(
+                    "page=$pageNum child[$i]=${getInternalNodeChild(page, i)}"
+                )
+                dumpTree(table, getInternalNodeChild(page, i), "$indent   ")
+            }
+            dumpTree(table, getRightChild(page), "$indent   ")
+        }
+
+        NodeType.NODE_LEAF -> {
+            println("$indent Num cells: ${getLeafNodeNumCells(page)}")
+            println("$indent Next leaf: ${getLeafNextLeafNode(page)}")
+            print("$indent Keys: ")
+            repeat(getLeafNodeNumCells(page)) { i ->
+                print("${getNodeKeyValue(page, i)} ")
+            }
+            println()
+            println("$indent Rows:")
+            repeat(getLeafNodeNumCells(page)) { i ->
+                println("$indent   ${getRow(page, i)}")
+            }
+        }
+    }
+    println("$indent=============================================")
+}
+
+fun dumpPage(table: Table, pageNum: Int) {
+    val page = table.pager.getPage(pageNum)
+    println("=============================================")
+    println("Page num: $pageNum")
+    println("Node type ${getNodeType(page)}")
+    println("Is root ${getIsRoot(page)}")
+    println("Parent node ${ByteBuffer.wrap(page).getInt(PARENT_POINTER_OFFSET)}")
+
+    when (getNodeType(page)) {
+        NodeType.NODE_LEAF -> dumpLeaf(page)
+        NodeType.NODE_INTERNAL -> dumpInternal(page)
+    }
+    println("=============================================")
+}
+
+fun dumpInternal(page: ByteArray) {
+    println("Num keys ${getInternalNodeNumKeys(page)}")
+    repeat(getInternalNodeNumKeys(page)) { i ->
+        println("Child: ${getInternalNodeChild(page, i)}")
+        println("Key: ${getInternalNodeKey(page, i)}")
+    }
+}
+
+fun dumpLeaf(page: ByteArray) {
+    println("Num cells ${getLeafNodeNumCells(page)}")
+    println("Next leaf ${getLeafNextLeafNode(page)}")
+    repeat(getLeafNodeNumCells(page)) { i ->
+        val row = getRow(page, i)
+        println("Row: $row")
+    }
+}
+
+fun getRow(page: ByteArray, cell: Int): Row {
+    val username = ByteArray(USERNAME_SIZE)
+    val email = ByteArray(EMAIL_SIZE)
+
+    val valueOffset = leafNodeCell(cell) + LEAF_NODE_KEY_SIZE
+
+    val id = ByteBuffer.wrap(page).getInt(valueOffset)
+    System.arraycopy(
+        page,
+        valueOffset + USERNAME_OFFSET,
+        username,
+        0,
+        USERNAME_SIZE
+    )
+    System.arraycopy(
+        page,
+        valueOffset + EMAIL_OFFSET,
+        email,
+        0,
+        EMAIL_SIZE
+    )
+    return Row(
+        Id = id,
+        Username = String(username).trimEnd('\u0000'),
+        Email = String(email).trimEnd('\u0000')
+    )
 }
