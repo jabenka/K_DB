@@ -7,9 +7,381 @@ class StatementExecutor {
             StatementType.STATEMENT_INSERT -> executeInsert(statement)
             StatementType.STATEMENT_SELECT -> executeSelect(statement)
             StatementType.STATEMENT_UPDATE -> TODO()
-            StatementType.STATEMENT_DELETE -> TODO()
+            StatementType.STATEMENT_DELETE -> executeDelete(statement)
             StatementType.STATEMENT_UNDEFINED -> TODO()
         }
+    }
+
+    private fun executeDelete(statement: PreparedStatement) {
+        val id = statement.statement.split(" ").filter { it.isNotBlank() && it != "delete" }[0].toInt()
+        val cursor = tableFind(statement.table, id)
+        val page = cursor.table.pager.getPage(cursor.pageNum)
+        if ((cursor.cellNum >= getLeafNodeNumCells(page)) || (getNodeKeyValue(page, cursor.cellNum) != id)) {
+            println("Not found id $id")
+            return
+        }
+        leadNodeDelete(cursor)
+    }
+
+    private fun leadNodeDelete(cursor: Cursor) {
+
+        val page = cursor.table.pager.getPage(cursor.pageNum)
+        val numCells = getLeafNodeNumCells(page)
+        val oldMax = getMaxNodeKey(cursor.table.pager, page)
+        for (i in cursor.cellNum until numCells - 1) {
+            System.arraycopy(
+                page,
+                leafNodeCell(i + 1),
+                page,
+                leafNodeCell(i),
+                LEAF_NODE_CELL_SIZE
+            )
+        }
+        setLeafNodeNumCells(page, numCells - 1)
+        if (numCells - 1 > 0) {
+            val currentMax = getMaxNodeKey(cursor.table.pager, page)
+            if (oldMax != currentMax) {
+                updateNodeMaxInParent(cursor.table.pager, cursor.pageNum, currentMax)
+            }
+        }
+        if (!getIsRoot(page) && numCells - 1 < LEAF_NODE_LEFT_SPLIT_COUNT) {
+            rebalance(cursor, page)
+        }
+
+    }
+
+    private fun rebalance(cursor: Cursor, page: ByteArray) {
+        val parent = cursor.table.pager.getPage(getParent(page))
+        val childIndex = findChildIndex(parent, cursor.pageNum)!!
+        val left = if (childIndex > 0) getInternalNodeChild(parent, childIndex - 1) else null
+        val right =
+            if (childIndex < getInternalNodeNumKeys(parent)) getInternalNodeChild(parent, childIndex + 1) else null
+        val leftPage = left?.let { cursor.table.pager.getPage(it) }
+        val rightPage = right?.let { cursor.table.pager.getPage(it) }
+        when {
+            canBorrow(leftPage, page) -> borrowFromLeft(left!!, leftPage!!, page,cursor)
+            canBorrow(rightPage, page) -> borrowFromRight(rightPage!!, page, cursor)
+            left != null -> mergerWithLeft(leftPage!!, page, cursor)
+            else -> mergeWithRight(right!!, page, cursor)
+        }
+    }
+
+    private fun mergeWithRight(rightPageNum: Int, page: ByteArray, cursor: Cursor) {
+        val rightPage = cursor.table.pager.getPage(rightPageNum)
+        val pageCellNum = getLeafNodeNumCells(page)
+        val rightCellNum = getLeafNodeNumCells(rightPage)
+        System.arraycopy(
+            rightPage, leafNodeCell(0),
+            page, leafNodeCell(pageCellNum),
+            rightCellNum * LEAF_NODE_CELL_SIZE
+        )
+        setLeafNodeNumCells(page, pageCellNum + rightCellNum)
+        setLeafNextLeafNode(page, getLeafNextLeafNode(rightPage))
+
+        val parentPageNum = getParent(page)
+        val parent = cursor.table.pager.getPage(parentPageNum)
+        val idxRight = findChildIndex(parent, rightPageNum)!!
+        if (idxRight != getInternalNodeNumKeys(parent)) {
+            setInternalNodeKey(parent, idxRight - 1, getMaxNodeKey(cursor.table.pager, page))
+        }
+        internalNodeDelete(parentPageNum, idxRight, cursor)
+    }
+
+    private fun mergerWithLeft(leftPage: ByteArray, page: ByteArray, cursor: Cursor) {
+        val currentCellNum = getLeafNodeNumCells(page)
+        System.arraycopy(
+            page, leafNodeCell(0),
+            leftPage, leafNodeCell(getLeafNodeNumCells(leftPage)),
+            currentCellNum * LEAF_NODE_CELL_SIZE
+        )
+        val leftCellNum = getLeafNodeNumCells(leftPage)
+        setLeafNodeNumCells(leftPage, leftCellNum + currentCellNum)
+        setLeafNextLeafNode(leftPage, getLeafNextLeafNode(page))
+
+        val parentPageNum = getParent(page)
+        val parent = cursor.table.pager.getPage(parentPageNum)
+        val idxPage = findChildIndex(parent, cursor.pageNum)!!
+        if (idxPage != getInternalNodeNumKeys(parent)) {
+            setInternalNodeKey(parent, idxPage - 1, getMaxNodeKey(cursor.table.pager, leftPage))
+        }
+        internalNodeDelete(parentPageNum, idxPage, cursor)
+    }
+
+    private fun internalNodeDelete(nodePageNum: Int, childIndex: Int?, cursor: Cursor) {
+        if (childIndex == null) return
+
+        val pager = cursor.table.pager
+        val node = pager.getPage(nodePageNum)
+        val numKeys = getInternalNodeNumKeys(node)
+        val oldMax = getMaxNodeKey(pager, node)
+
+        if (childIndex == numKeys) {
+            setRightChild(node, getInternalNodeChild(node, numKeys - 1))
+        } else {
+            for (i in childIndex until numKeys - 1) {
+                System.arraycopy(
+                    node, internalNodeCell(i + 1),
+                    node, internalNodeCell(i),
+                    INTERNAL_NODE_CELL_SIZE
+                )
+            }
+        }
+        setInternalNodeNumKeys(node, numKeys - 1)
+
+        if (getIsRoot(node)) {
+            if (getInternalNodeNumKeys(node) == 0) {
+                collapseRoot(cursor.table, node)
+            }
+            return
+        }
+
+        val newMax = getMaxNodeKey(pager, node)
+        if (oldMax != newMax) {
+            updateNodeMaxInParent(pager, nodePageNum, newMax)
+        }
+
+        if (getInternalNodeNumKeys(node) < INTERNAL_NODE_MIN_KEYS) {
+            rebalanceInternal(nodePageNum, cursor)
+        }
+    }
+
+    private fun rebalanceInternal(nodePageNum: Int, cursor: Cursor) {
+        val pager = cursor.table.pager
+        val node = pager.getPage(nodePageNum)
+        val parentPageNum = getParent(node)
+        val parent = pager.getPage(parentPageNum)
+        val idx = findChildIndex(parent, nodePageNum)!!
+
+        val leftNum = if (idx > 0) getInternalNodeChild(parent, idx - 1) else null
+        val rightNum =
+            if (idx < getInternalNodeNumKeys(parent)) getInternalNodeChild(parent, idx + 1) else null
+        val left = leftNum?.let { pager.getPage(it) }
+        val right = rightNum?.let { pager.getPage(it) }
+
+        when {
+            canBorrowInternal(left) -> borrowInternalFromLeft(leftNum!!, nodePageNum, parentPageNum, cursor)
+            canBorrowInternal(right) -> borrowInternalFromRight(rightNum!!, nodePageNum, parentPageNum, cursor)
+            leftNum != null -> mergeInternalWithLeft(leftNum, nodePageNum, parentPageNum, cursor)
+            else -> mergeInternalWithRight(nodePageNum, rightNum!!, parentPageNum, cursor)
+        }
+    }
+
+    private fun canBorrowInternal(sibling: ByteArray?): Boolean {
+        if (sibling == null) return false
+        return getInternalNodeNumKeys(sibling) > INTERNAL_NODE_MIN_KEYS
+    }
+
+    private fun borrowInternalFromLeft(
+        leftPageNum: Int, nodePageNum: Int, parentPageNum: Int, cursor: Cursor
+    ) {
+        val pager = cursor.table.pager
+        val left = pager.getPage(leftPageNum)
+        val node = pager.getPage(nodePageNum)
+        val parent = pager.getPage(parentPageNum)
+
+        val movedChild = getRightChild(left)
+        val movedMax = getMaxNodeKey(pager, pager.getPage(movedChild))
+
+        val leftNumKeys = getInternalNodeNumKeys(left)
+        setRightChild(left, getInternalNodeChild(left, leftNumKeys - 1))
+        setInternalNodeNumKeys(left, leftNumKeys - 1)
+
+        val nodeNumKeys = getInternalNodeNumKeys(node)
+        for (i in nodeNumKeys - 1 downTo 0) {
+            System.arraycopy(
+                node, internalNodeCell(i),
+                node, internalNodeCell(i + 1),
+                INTERNAL_NODE_CELL_SIZE
+            )
+        }
+        setInternalNodeChild(node, 0, movedChild)
+        setInternalNodeKey(node, 0, movedMax)
+        setInternalNodeNumKeys(node, nodeNumKeys + 1)
+        setParent(pager.getPage(movedChild), nodePageNum)
+
+        val idxNode = findChildIndex(parent, nodePageNum)!!
+        setInternalNodeKey(parent, idxNode - 1, getMaxNodeKey(pager, left))
+    }
+
+    private fun borrowInternalFromRight(
+        rightPageNum: Int, nodePageNum: Int, parentPageNum: Int, cursor: Cursor
+    ) {
+        val pager = cursor.table.pager
+        val right = pager.getPage(rightPageNum)
+        val node = pager.getPage(nodePageNum)
+        val parent = pager.getPage(parentPageNum)
+
+        val nodeNumKeys = getInternalNodeNumKeys(node)
+        val currentRight = getRightChild(node)
+        setInternalNodeChild(node, nodeNumKeys, currentRight)
+        setInternalNodeKey(node, nodeNumKeys, getMaxNodeKey(pager, pager.getPage(currentRight)))
+
+        val movedChild = getInternalNodeChild(right, 0)
+        setRightChild(node, movedChild)
+        setInternalNodeNumKeys(node, nodeNumKeys + 1)
+        setParent(pager.getPage(movedChild), nodePageNum)
+
+        val rightNumKeys = getInternalNodeNumKeys(right)
+        for (i in 0 until rightNumKeys - 1) {
+            System.arraycopy(
+                right, internalNodeCell(i + 1),
+                right, internalNodeCell(i),
+                INTERNAL_NODE_CELL_SIZE
+            )
+        }
+        setInternalNodeNumKeys(right, rightNumKeys - 1)
+
+        val idxNode = findChildIndex(parent, nodePageNum)!!
+        setInternalNodeKey(parent, idxNode, getMaxNodeKey(pager, node))
+    }
+
+    private fun mergeInternalWithLeft(
+        leftPageNum: Int, nodePageNum: Int, parentPageNum: Int, cursor: Cursor
+    ) {
+        val pager = cursor.table.pager
+        val left = pager.getPage(leftPageNum)
+        val node = pager.getPage(nodePageNum)
+        val parent = pager.getPage(parentPageNum)
+
+        var writeIdx = getInternalNodeNumKeys(left)
+        val leftRight = getRightChild(left)
+        setInternalNodeChild(left, writeIdx, leftRight)
+        setInternalNodeKey(left, writeIdx, getMaxNodeKey(pager, pager.getPage(leftRight)))
+        writeIdx++
+
+        val nodeNumKeys = getInternalNodeNumKeys(node)
+        for (i in 0 until nodeNumKeys) {
+            val child = getInternalNodeChild(node, i)
+            setInternalNodeChild(left, writeIdx, child)
+            setInternalNodeKey(left, writeIdx, getInternalNodeKey(node, i))
+            setParent(pager.getPage(child), leftPageNum)
+            writeIdx++
+        }
+        val nodeRight = getRightChild(node)
+        setRightChild(left, nodeRight)
+        setParent(pager.getPage(nodeRight), leftPageNum)
+        setInternalNodeNumKeys(left, writeIdx)
+
+        val idxNode = findChildIndex(parent, nodePageNum)!!
+        if (idxNode != getInternalNodeNumKeys(parent)) {
+            setInternalNodeKey(parent, idxNode - 1, getMaxNodeKey(pager, left))
+        }
+        internalNodeDelete(parentPageNum, idxNode, cursor)
+    }
+
+    private fun mergeInternalWithRight(
+        nodePageNum: Int, rightPageNum: Int, parentPageNum: Int, cursor: Cursor
+    ) {
+        val pager = cursor.table.pager
+        val node = pager.getPage(nodePageNum)
+        val right = pager.getPage(rightPageNum)
+        val parent = pager.getPage(parentPageNum)
+
+        var writeIdx = getInternalNodeNumKeys(node)
+        val nodeRight = getRightChild(node)
+        setInternalNodeChild(node, writeIdx, nodeRight)
+        setInternalNodeKey(node, writeIdx, getMaxNodeKey(pager, pager.getPage(nodeRight)))
+        writeIdx++
+
+        val rightNumKeys = getInternalNodeNumKeys(right)
+        for (i in 0 until rightNumKeys) {
+            val child = getInternalNodeChild(right, i)
+            setInternalNodeChild(node, writeIdx, child)
+            setInternalNodeKey(node, writeIdx, getInternalNodeKey(right, i))
+            setParent(pager.getPage(child), nodePageNum)
+            writeIdx++
+        }
+        val rightRight = getRightChild(right)
+        setRightChild(node, rightRight)
+        setParent(pager.getPage(rightRight), nodePageNum)
+        setInternalNodeNumKeys(node, writeIdx)
+
+        val idxRight = findChildIndex(parent, rightPageNum)!!
+        if (idxRight != getInternalNodeNumKeys(parent)) {
+            setInternalNodeKey(parent, idxRight - 1, getMaxNodeKey(pager, node))
+        }
+        internalNodeDelete(parentPageNum, idxRight, cursor)
+    }
+
+
+    private fun borrowFromRight(
+        rightPage: ByteArray,
+        page: ByteArray,
+        cursor: Cursor
+    ) {
+        val oldMax = getMaxNodeKey(cursor.table.pager, page)
+        val rightCellNum = getLeafNodeNumCells(rightPage)
+        val currentCellNum = getLeafNodeNumCells(page)
+
+        val total = rightCellNum + currentCellNum
+        val targetCurrent = total / 2
+        val delta = targetCurrent - currentCellNum
+
+        if (delta <= 0) return
+
+        System.arraycopy(
+            rightPage,
+            leafNodeCell(0),
+            page,
+            leafNodeCell(currentCellNum),
+            delta * LEAF_NODE_CELL_SIZE
+        )
+
+        for (i in 0 until rightCellNum - delta) {
+            System.arraycopy(
+                rightPage,
+                leafNodeCell(i + delta),
+                rightPage,
+                leafNodeCell(i),
+                LEAF_NODE_CELL_SIZE
+            )
+        }
+        setLeafNodeNumCells(page, currentCellNum + delta)
+        setLeafNodeNumCells(rightPage, rightCellNum - delta)
+        val newMax = getMaxNodeKey(cursor.table.pager, page)
+        if(oldMax != newMax) {
+            updateNodeMaxInParent(cursor.table.pager, cursor.pageNum, newMax)
+        }
+    }
+
+    private fun borrowFromLeft(leftPageNum: Int, leftPage: ByteArray, page: ByteArray,cursor: Cursor) {
+        val leftCellNum = getLeafNodeNumCells(leftPage)
+        val currentCellNum = getLeafNodeNumCells(page)
+        val oldMax = getMaxNodeKey(cursor.table.pager, leftPage)
+        val total = leftCellNum + currentCellNum
+        val targetCurrent = total / 2
+        val delta = targetCurrent - currentCellNum
+
+        if (delta <= 0) return
+        for (i in currentCellNum - 1 downTo 0) {
+            System.arraycopy(
+                page,
+                leafNodeCell(i),
+                page,
+                leafNodeCell(i + delta),
+                LEAF_NODE_CELL_SIZE
+            )
+        }
+        System.arraycopy(
+            leftPage,
+            leafNodeCell(leftCellNum - delta),
+            page,
+            leafNodeCell(0),
+            delta * LEAF_NODE_CELL_SIZE
+        )
+        setLeafNodeNumCells(page, currentCellNum + delta)
+        setLeafNodeNumCells(leftPage, leftCellNum - delta)
+        val newMax = getMaxNodeKey(cursor.table.pager, leftPage)
+        if(oldMax != newMax) {
+            updateNodeMaxInParent(cursor.table.pager, leftPageNum, newMax)
+        }
+    }
+
+    private fun canBorrow(sibling: ByteArray?, current: ByteArray): Boolean {
+        if (sibling == null) return false
+        val siblingNumCells = getLeafNodeNumCells(sibling)
+        val currentNumCells = getLeafNodeNumCells(current)
+        return siblingNumCells + currentNumCells > LEAF_NODE_MAX_CELLS
     }
 
 
@@ -232,7 +604,6 @@ class StatementExecutor {
     }
 
 
-
     fun leafNodeInsert(cursor: Cursor, row: Row) {
         val page = cursor.table.pager.getPage(cursor.pageNum)
         val numCells = getLeafNodeNumCells(page)
@@ -240,6 +611,7 @@ class StatementExecutor {
         serialize(row, page, cursor.cellNum)
         setLeafNodeNumCells(page, numCells + 1)
     }
+
     data class PreparedStatement(
         val statement: String,
         val statementStatus: StatementStatus,
