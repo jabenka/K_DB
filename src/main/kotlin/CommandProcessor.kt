@@ -45,30 +45,46 @@ class CommandProcessor(private val statementExecutor: StatementExecutor) {
     }
 
     private fun prepareStatement(command: String, table: Table): PreparedStatement {
-        if (command.startsWith("insert")) {
-            return PreparedStatement(
-                command,
-                statementStatus = StatementStatus.PREPARE_SUCCESS,
-                statementType = StatementType.STATEMENT_INSERT,
-                table = table
-            )
-        } else if (command.startsWith("delete")) {
-            return PreparedStatement(
-                statement = command,
-                statementStatus = StatementStatus.PREPARE_SUCCESS,
-                statementType = StatementType.STATEMENT_DELETE,
-                table = table
 
-            )
-        } else if (command.startsWith("select")) {
-            return PreparedStatement(
-                statement = command,
-                statementStatus = StatementStatus.PREPARE_SUCCESS,
-                statementType = StatementType.STATEMENT_SELECT,
-                table = table
-            )
-        } else {
-            return PreparedStatement(
+        when {
+            command.startsWith("insert") -> {
+                return PreparedStatement(
+                    command,
+                    statementStatus = StatementStatus.PREPARE_SUCCESS,
+                    statementType = StatementType.STATEMENT_INSERT,
+                    table = table
+                )
+            }
+
+            command.startsWith("delete") -> {
+                return PreparedStatement(
+                    statement = command,
+                    statementStatus = StatementStatus.PREPARE_SUCCESS,
+                    statementType = StatementType.STATEMENT_DELETE,
+                    table = table
+
+                )
+            }
+
+            command.startsWith("select") -> {
+                return PreparedStatement(
+                    statement = command,
+                    statementStatus = StatementStatus.PREPARE_SUCCESS,
+                    statementType = StatementType.STATEMENT_SELECT,
+                    table = table
+                )
+            }
+
+            command.startsWith("update") -> {
+                return PreparedStatement(
+                    statement = command,
+                    statementStatus = StatementStatus.PREPARE_SUCCESS,
+                    statementType = StatementType.STATEMENT_UPDATE,
+                    table = table
+                )
+            }
+
+            else -> return PreparedStatement(
                 statement = command,
                 statementStatus = StatementStatus.PREPARE_UNDEFINED,
                 statementType = StatementType.STATEMENT_UNDEFINED,
@@ -76,8 +92,6 @@ class CommandProcessor(private val statementExecutor: StatementExecutor) {
             )
         }
     }
-
-
 
 
     enum class MetaCommands { META_COMMAND_SUCCESS, META_COMMAND_UNDEFINED }

@@ -6,10 +6,73 @@ class StatementExecutor {
         when (statement.statementType) {
             StatementType.STATEMENT_INSERT -> executeInsert(statement)
             StatementType.STATEMENT_SELECT -> executeSelect(statement)
-            StatementType.STATEMENT_UPDATE -> TODO()
+            StatementType.STATEMENT_UPDATE -> executeUpdate(statement)
             StatementType.STATEMENT_DELETE -> executeDelete(statement)
             StatementType.STATEMENT_UNDEFINED -> TODO()
         }
+    }
+
+    private fun executeUpdate(statement: PreparedStatement) {
+
+        val parts = statement.statement.split("set")
+        val id = parts[0].split(" ").filter { it != "update" }[0].toInt()
+        val values = parts[1].split(" ").filter { !it.isEmpty() && it != "values" && it != "," }.map { it.split("=") }
+            .associate { it[0] to it[1] }
+        val cursor = tableFind(statement.table, id)
+        val page = cursor.table.pager.getPage(cursor.pageNum)
+        if ((cursor.cellNum >= getLeafNodeNumCells(page)) || (getNodeKeyValue(page, cursor.cellNum) != id)) {
+            println("Not found id $id")
+            return
+        }
+        updatePage(cursor, values)
+    }
+
+    private fun updatePage(cursor: Cursor, values: Map<String, String>) {
+        val page = cursor.table.pager.getPage(cursor.pageNum)
+        values.entries.forEach { updateFiled(page, it,cursor.cellNum) }
+
+    }
+
+    fun updateFiled(page: ByteArray, it: Map.Entry<String, String>,cellNum: Int) {
+        when (val fieldName = it.key) {
+            "username" -> updateUsername(page,it.value,cellNum)
+            "email" -> updateEmail(page,it.value,cellNum)
+            else ->{
+                println("Unknown field $fieldName")
+                return
+            }
+        }
+
+    }
+
+    private fun updateEmail(page: ByteArray, email: String, cellNum: Int) {
+        val cellOffset =
+            LEAF_NODE_HEADER_SIZE +
+                    cellNum * LEAF_NODE_CELL_SIZE
+
+        val valueOffset = cellOffset + LEAF_NODE_KEY_SIZE
+        System.arraycopy(
+            email.toByteArray(),
+            0,
+            page,
+            valueOffset + EMAIL_OFFSET,
+            email.toByteArray().size,
+        )
+    }
+
+    private fun updateUsername(page: ByteArray, username: String,cellNum: Int) {
+        val cellOffset =
+            LEAF_NODE_HEADER_SIZE +
+                    cellNum * LEAF_NODE_CELL_SIZE
+
+        val valueOffset = cellOffset + LEAF_NODE_KEY_SIZE
+        System.arraycopy(
+            username.toByteArray(),
+            0,
+            page,
+            valueOffset + USERNAME_OFFSET,
+            username.toByteArray().size,
+        )
     }
 
     private fun executeDelete(statement: PreparedStatement) {
@@ -59,7 +122,7 @@ class StatementExecutor {
         val leftPage = left?.let { cursor.table.pager.getPage(it) }
         val rightPage = right?.let { cursor.table.pager.getPage(it) }
         when {
-            canBorrow(leftPage, page) -> borrowFromLeft(left!!, leftPage!!, page,cursor)
+            canBorrow(leftPage, page) -> borrowFromLeft(left!!, leftPage!!, page, cursor)
             canBorrow(rightPage, page) -> borrowFromRight(rightPage!!, page, cursor)
             left != null -> mergerWithLeft(leftPage!!, page, cursor)
             else -> mergeWithRight(right!!, page, cursor)
@@ -339,12 +402,12 @@ class StatementExecutor {
         setLeafNodeNumCells(page, currentCellNum + delta)
         setLeafNodeNumCells(rightPage, rightCellNum - delta)
         val newMax = getMaxNodeKey(cursor.table.pager, page)
-        if(oldMax != newMax) {
+        if (oldMax != newMax) {
             updateNodeMaxInParent(cursor.table.pager, cursor.pageNum, newMax)
         }
     }
 
-    private fun borrowFromLeft(leftPageNum: Int, leftPage: ByteArray, page: ByteArray,cursor: Cursor) {
+    private fun borrowFromLeft(leftPageNum: Int, leftPage: ByteArray, page: ByteArray, cursor: Cursor) {
         val leftCellNum = getLeafNodeNumCells(leftPage)
         val currentCellNum = getLeafNodeNumCells(page)
         val oldMax = getMaxNodeKey(cursor.table.pager, leftPage)
@@ -372,7 +435,7 @@ class StatementExecutor {
         setLeafNodeNumCells(page, currentCellNum + delta)
         setLeafNodeNumCells(leftPage, leftCellNum - delta)
         val newMax = getMaxNodeKey(cursor.table.pager, leftPage)
-        if(oldMax != newMax) {
+        if (oldMax != newMax) {
             updateNodeMaxInParent(cursor.table.pager, leftPageNum, newMax)
         }
     }
@@ -629,3 +692,4 @@ class StatementExecutor {
 
 
 }
+

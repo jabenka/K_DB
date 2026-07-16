@@ -26,7 +26,6 @@ class MainTest {
     }
 
 
-
     @Test
     fun `insert and select`() {
         cp.processCommand("insert 1 fofo baba", table)
@@ -352,6 +351,7 @@ class MainTest {
             }
         }
     }
+
     @Test
     fun `insert into left leaf after root split keeps order`() {
         repeat(LEAF_NODE_MAX_CELLS + 1) {
@@ -434,7 +434,7 @@ class MainTest {
         }
 
         assertEquals(
-            listOf(1,2,5,10,15,20,25,30),
+            listOf(1, 2, 5, 10, 15, 20, 25, 30),
             result
         )
     }
@@ -494,7 +494,7 @@ class MainTest {
 
         val root = table.pager.getPage(0)
 
-        val left = getInternalNodeChild(root,0)
+        val left = getInternalNodeChild(root, 0)
         val right = getRightChild(root)
 
         assertEquals(
@@ -581,7 +581,7 @@ class MainTest {
                 NodeType.NODE_LEAF,
                 getNodeType(
                     table.pager.getPage(
-                        getInternalNodeChild(root,it)
+                        getInternalNodeChild(root, it)
                     )
                 )
             )
@@ -616,7 +616,7 @@ class MainTest {
     }
 
     @Test
-    fun `dump tree`(){
+    fun `dump tree`() {
         repeat(LEAF_NODE_MAX_CELLS * 3 + 1) {
             cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
@@ -628,70 +628,70 @@ class MainTest {
 
     @Test
     fun `delete leaf row`() {
-        repeat(5){
+        repeat(5) {
             cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
         }
-        cp.processCommand("delete 3",table)
+        cp.processCommand("delete 3", table)
         val node = table.pager.getPage(0)
-        assertEquals(4,getLeafNodeNumCells(node))
+        assertEquals(4, getLeafNodeNumCells(node))
     }
 
     @Test
     fun `delete first row in leaf `() {
-        repeat(5){
+        repeat(5) {
             cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
         }
-        cp.processCommand("delete 1",table)
+        cp.processCommand("delete 1", table)
         val node = table.pager.getPage(0)
-        assertEquals(4,getLeafNodeNumCells(node))
+        assertEquals(4, getLeafNodeNumCells(node))
     }
 
     @Test
     fun `delete last row in leaf `() {
-        repeat(5){
+        repeat(5) {
             cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
         }
-        cp.processCommand("delete 5",table)
+        cp.processCommand("delete 5", table)
         val node = table.pager.getPage(0)
-        assertEquals(4,getLeafNodeNumCells(node))
+        assertEquals(4, getLeafNodeNumCells(node))
     }
 
     @Test
     fun `delete several rows in leaf `() {
         val insertCount = 5
         val deleteCount = 3
-        repeat(insertCount){
+        repeat(insertCount) {
             cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
         }
-        repeat(deleteCount){
-            cp.processCommand("delete ${it+1}",table)
+        repeat(deleteCount) {
+            cp.processCommand("delete ${it + 1}", table)
         }
         val node = table.pager.getPage(0)
-        assertEquals(insertCount - deleteCount,getLeafNodeNumCells(node))
+        assertEquals(insertCount - deleteCount, getLeafNodeNumCells(node))
     }
 
     @Test
     fun `delete max row in leaf check parent`() {
         val insertCount = 20
-        repeat(insertCount){
+        repeat(insertCount) {
             cp.processCommand(
                 "insert ${it + 1} u${it + 1} e${it + 1}",
                 table
             )
         }
-        cp.processCommand("delete 7",table)
+        cp.processCommand("delete 7", table)
         dumpTree(table, 0)
     }
 
@@ -707,8 +707,6 @@ class MainTest {
 
     @Test
     fun `stress delete keeps tree consistent`() {
-        // n подобран так, чтобы дерево укладывалось в TABLE_MAX_PAGES (=100):
-        // фанауты узлов в этой toy-БД маленькие, а страницы при вставке не переиспользуются.
         val n = 200
         for (i in 1..n) {
             cp.processCommand("insert $i u$i e$i", table)
@@ -773,10 +771,120 @@ class MainTest {
 
         assertEquals(
             listOf(
-                1,2,3,4,5,6,
-                8,9,10,11,12,13,14,15
+                1, 2, 3, 4, 5, 6,
+                8, 9, 10, 11, 12, 13, 14, 15
             ),
             ids
+        )
+    }
+
+    @Test
+    fun stringTest() {
+        val str = "update 15 set values email=email@gmail.com username=ew'ass\"sd"
+        val parts = str.split("set")
+        val id = parts[0].split(" ").filter { it != "update" }[0].toInt()
+        val values = parts[1].split(" ").filter { !it.isEmpty() && it != "values" && it != "," }.map { it.split("=") }
+            .associate { it[0] to it[1] }
+
+        println(id)
+        println()
+        println(values)
+
+    }
+
+    @Test
+    fun `update username and email`() {
+        cp.processCommand(
+            "insert 15 oldUser oldEmail",
+            table
+        )
+
+        cp.processCommand(
+            """update 15 set values email=email@gmail.com username=ew'ass"sd""",
+            table
+        )
+
+        val cursor = tableFind(table, 15)
+
+        assertEquals(
+            Row(
+                15,
+                """ew'ass"sd""",
+                "email@gmail.com"
+            ),
+            deserializeRow(cursor)
+        )
+    }
+
+    @Test
+    fun `update only email`() {
+        cp.processCommand(
+            "insert 15 user oldEmail",
+            table
+        )
+
+        cp.processCommand(
+            "update 15 set values email=new@gmail.com",
+            table
+        )
+
+        val row = deserializeRow(tableFind(table, 15))
+
+        assertEquals(
+            Row(
+                15,
+                "user",
+                "new@gmail.com"
+            ),
+            row
+        )
+    }
+
+    @Test
+    fun `update only username`() {
+        cp.processCommand(
+            "insert 15 user oldEmail",
+            table
+        )
+
+        cp.processCommand(
+            "update 15 set values username=newUser",
+            table
+        )
+
+        val row = deserializeRow(tableFind(table, 15))
+
+        assertEquals(
+            Row(
+                15,
+                "newUser",
+                "oldEmail"
+            ),
+            row
+        )
+    }
+
+    @Test
+    fun `select returns updated values`() {
+        cp.processCommand(
+            "insert 15 user email",
+            table
+        )
+
+        cp.processCommand(
+            "update 15 set values username=newUser email=new@mail.com",
+            table
+        )
+
+        val cursor = tableStart(table)
+
+        assertEquals(
+            Row(
+                15,
+                "newUser",
+                "new@mail.com"
+            ),
+            deserializeRow(cursor)
         )
     }
 }
