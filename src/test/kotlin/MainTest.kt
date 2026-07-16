@@ -2,6 +2,8 @@ import com.zxcjabka.game.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.io.TempDir
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.nio.ByteBuffer
 import java.nio.file.Path
 import kotlin.test.Test
@@ -886,5 +888,50 @@ class MainTest {
             ),
             deserializeRow(cursor)
         )
+    }
+
+    @Test
+    fun `help command prints help page`() {
+        val out = ByteArrayOutputStream()
+        val oldOut = System.out
+
+        System.setOut(PrintStream(out))
+
+        try {
+            cp.processCommand(".help", table)
+
+            val output = out.toString()
+
+            assertTrue(output.contains("Help page"))
+            assertTrue(output.contains("Insert"))
+            assertTrue(output.contains("Delete"))
+            assertTrue(output.contains("Update"))
+            assertTrue(output.contains("Select"))
+            assertTrue(output.contains(".dump_page"))
+            assertTrue(output.contains(".dump_tree"))
+            assertTrue(output.contains(".q"))
+        } finally {
+            System.setOut(oldOut)
+        }
+    }
+
+    @Test
+    fun `unknown statement prints error message`() {
+        val out = ByteArrayOutputStream()
+        val oldOut = System.out
+
+        System.setOut(PrintStream(out))
+
+        try {
+            cp.processCommand("abracadabra", table)
+
+            val output = out.toString()
+
+            assertTrue(output.contains("Invalid statement"))
+            assertTrue(output.contains("abracadabra"))
+            assertTrue(output.contains("Try .help command"))
+        } finally {
+            System.setOut(oldOut)
+        }
     }
 }
