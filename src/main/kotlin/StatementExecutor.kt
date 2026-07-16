@@ -1,5 +1,7 @@
 package com.zxcjabka.game
 
+import java.util.Arrays
+
 class StatementExecutor {
 
     fun executeStatement(statement: PreparedStatement) {
@@ -8,7 +10,7 @@ class StatementExecutor {
             StatementType.STATEMENT_SELECT -> executeSelect(statement)
             StatementType.STATEMENT_UPDATE -> executeUpdate(statement)
             StatementType.STATEMENT_DELETE -> executeDelete(statement)
-            StatementType.STATEMENT_UNDEFINED -> TODO()
+            else -> {return}
         }
     }
 
@@ -30,7 +32,6 @@ class StatementExecutor {
     private fun updatePage(cursor: Cursor, values: Map<String, String>) {
         val page = cursor.table.pager.getPage(cursor.pageNum)
         values.entries.forEach { updateFiled(page, it,cursor.cellNum) }
-
     }
 
     fun updateFiled(page: ByteArray, it: Map.Entry<String, String>,cellNum: Int) {
@@ -51,12 +52,14 @@ class StatementExecutor {
                     cellNum * LEAF_NODE_CELL_SIZE
 
         val valueOffset = cellOffset + LEAF_NODE_KEY_SIZE
+        Arrays.fill(page,valueOffset+EMAIL_OFFSET,valueOffset+EMAIL_OFFSET+EMAIL_SIZE,0)
+        val byteEmail = email.toByteArray()
         System.arraycopy(
-            email.toByteArray(),
+            byteEmail,
             0,
             page,
             valueOffset + EMAIL_OFFSET,
-            email.toByteArray().size,
+            byteEmail.size,
         )
     }
 
@@ -66,12 +69,14 @@ class StatementExecutor {
                     cellNum * LEAF_NODE_CELL_SIZE
 
         val valueOffset = cellOffset + LEAF_NODE_KEY_SIZE
+        Arrays.fill(page,valueOffset+USERNAME_OFFSET,valueOffset+USERNAME_OFFSET+USERNAME_SIZE,0)
+        val byteUsername = username.toByteArray()
         System.arraycopy(
-            username.toByteArray(),
+            byteUsername,
             0,
             page,
             valueOffset + USERNAME_OFFSET,
-            username.toByteArray().size,
+            byteUsername.size,
         )
     }
 
