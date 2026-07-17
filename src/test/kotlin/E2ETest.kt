@@ -2,6 +2,7 @@ import com.zxcjabka.game.COLUMN_EMAIL
 import com.zxcjabka.game.COLUMN_USERNAME
 import com.zxcjabka.game.CommandProcessor
 import com.zxcjabka.game.INTERNAL_NODE_MAX_CELLS
+import com.zxcjabka.game.Row
 import com.zxcjabka.game.StatementExecutor
 import com.zxcjabka.game.Table
 import com.zxcjabka.game.dbOpen
@@ -95,6 +96,108 @@ class E2ETest {
             assertEquals(expectedId, row.Id)
             cursor.cursorAdvance()
         }
+        assertTrue(cursor.endOfTable)
+    }
+
+    @Test
+    fun `row lifecycle`() {
+
+        cp.processCommand(
+            "insert 15 user email",
+            table
+        )
+
+        var cursor = tableFind(table, 15)
+
+        assertEquals(
+            Row(15, "user", "email"),
+            deserializeRow(cursor)
+        )
+
+        cp.processCommand(
+            "update 15 set values email=test@gmail.com username=newUser",
+            table
+        )
+
+        cursor = tableFind(table, 15)
+
+        assertEquals(
+            Row(15, "newUser", "test@gmail.com"),
+            deserializeRow(cursor)
+        )
+
+        cp.processCommand(
+            "delete 15",
+            table
+        )
+
+        cursor = tableFind(table, 15)
+
+        assertFalse(cursor.existsById(15))
+    }
+
+    @Test
+    fun `update only email`() {
+
+        cp.processCommand(
+            "insert 15 user email",
+            table
+        )
+
+        cp.processCommand(
+            "update 15 set values email=new@gmail.com",
+            table
+        )
+
+        val row = deserializeRow(
+            tableFind(table, 15)
+        )
+
+        assertEquals(
+            Row(
+                15,
+                "user",
+                "new@gmail.com"
+            ),
+            row
+        )
+    }
+
+    @Test
+    fun `update and delete preserve other rows`() {
+
+        repeat(5) {
+            cp.processCommand(
+                "insert ${it + 1} u${it + 1} e${it + 1}",
+                table
+            )
+        }
+
+        cp.processCommand(
+            "update 3 set values username=updated",
+            table
+        )
+
+        cp.processCommand(
+            "delete 2",
+            table
+        )
+
+        val expected = listOf(
+            Row(1, "u1", "e1"),
+            Row(3, "updated", "e3"),
+            Row(4, "u4", "e4"),
+            Row(5, "u5", "e5")
+        )
+
+        val cursor = tableStart(table)
+
+        expected.forEach {
+            assertFalse(cursor.endOfTable)
+            assertEquals(it, deserializeRow(cursor))
+            cursor.cursorAdvance()
+        }
+
         assertTrue(cursor.endOfTable)
     }
 }
