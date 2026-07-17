@@ -1,16 +1,24 @@
 package com.zxcjabka.game
 
-import java.util.Arrays
+import java.util.*
 
 class StatementExecutor {
 
     fun executeStatement(statement: PreparedStatement) {
+        try {
+            StatementValidator.validate(statement)
+        } catch (ex: StatementException) {
+            println(ex)
+            return
+        }
         when (statement.statementType) {
             StatementType.STATEMENT_INSERT -> executeInsert(statement)
             StatementType.STATEMENT_SELECT -> executeSelect(statement)
             StatementType.STATEMENT_UPDATE -> executeUpdate(statement)
             StatementType.STATEMENT_DELETE -> executeDelete(statement)
-            else -> {return}
+            else -> {
+                return
+            }
         }
     }
 
@@ -21,29 +29,22 @@ class StatementExecutor {
         val values = parts[1].split(" ").filter { !it.isEmpty() && it != "values" && it != "," }.map { it.split("=") }
             .associate { it[0] to it[1] }
         val cursor = tableFind(statement.table, id)
-        val page = cursor.table.pager.getPage(cursor.pageNum)
-        if ((cursor.cellNum >= getLeafNodeNumCells(page)) || (getNodeKeyValue(page, cursor.cellNum) != id)) {
-            println("Not found id $id")
-            return
-        }
         updatePage(cursor, values)
     }
 
     private fun updatePage(cursor: Cursor, values: Map<String, String>) {
         val page = cursor.table.pager.getPage(cursor.pageNum)
-        values.entries.forEach { updateFiled(page, it,cursor.cellNum) }
+        values.entries.forEach { updateFiled(page, it, cursor.cellNum) }
     }
 
-    fun updateFiled(page: ByteArray, it: Map.Entry<String, String>,cellNum: Int) {
-        when (val fieldName = it.key) {
-            "username" -> updateUsername(page,it.value,cellNum)
-            "email" -> updateEmail(page,it.value,cellNum)
-            else ->{
-                println("Unknown field $fieldName")
+    fun updateFiled(page: ByteArray, it: Map.Entry<String, String>, cellNum: Int) {
+        when (it.key) {
+            "username" -> updateUsername(page, it.value, cellNum)
+            "email" -> updateEmail(page, it.value, cellNum)
+            else -> {
                 return
             }
         }
-
     }
 
     private fun updateEmail(page: ByteArray, email: String, cellNum: Int) {
@@ -52,7 +53,7 @@ class StatementExecutor {
                     cellNum * LEAF_NODE_CELL_SIZE
 
         val valueOffset = cellOffset + LEAF_NODE_KEY_SIZE
-        Arrays.fill(page,valueOffset+EMAIL_OFFSET,valueOffset+EMAIL_OFFSET+EMAIL_SIZE,0)
+        Arrays.fill(page, valueOffset + EMAIL_OFFSET, valueOffset + EMAIL_OFFSET + EMAIL_SIZE, 0)
         val byteEmail = email.toByteArray()
         System.arraycopy(
             byteEmail,
@@ -63,13 +64,13 @@ class StatementExecutor {
         )
     }
 
-    private fun updateUsername(page: ByteArray, username: String,cellNum: Int) {
+    private fun updateUsername(page: ByteArray, username: String, cellNum: Int) {
         val cellOffset =
             LEAF_NODE_HEADER_SIZE +
                     cellNum * LEAF_NODE_CELL_SIZE
 
         val valueOffset = cellOffset + LEAF_NODE_KEY_SIZE
-        Arrays.fill(page,valueOffset+USERNAME_OFFSET,valueOffset+USERNAME_OFFSET+USERNAME_SIZE,0)
+        Arrays.fill(page, valueOffset + USERNAME_OFFSET, valueOffset + USERNAME_OFFSET + USERNAME_SIZE, 0)
         val byteUsername = username.toByteArray()
         System.arraycopy(
             byteUsername,
@@ -83,15 +84,10 @@ class StatementExecutor {
     private fun executeDelete(statement: PreparedStatement) {
         val id = statement.statement.split(" ").filter { it.isNotBlank() && it != "delete" }[0].toInt()
         val cursor = tableFind(statement.table, id)
-        val page = cursor.table.pager.getPage(cursor.pageNum)
-        if ((cursor.cellNum >= getLeafNodeNumCells(page)) || (getNodeKeyValue(page, cursor.cellNum) != id)) {
-            println("Not found id $id")
-            return
-        }
-        leadNodeDelete(cursor)
+        leafNodeDelete(cursor)
     }
 
-    private fun leadNodeDelete(cursor: Cursor) {
+    private fun leafNodeDelete(cursor: Cursor) {
 
         val page = cursor.table.pager.getPage(cursor.pageNum)
         val numCells = getLeafNodeNumCells(page)
@@ -468,12 +464,6 @@ class StatementExecutor {
 
         val node = cursor.table.pager.getPage(cursor.pageNum)
         val numCells = getLeafNodeNumCells(node)
-        if (cursor.cellNum < numCells) {
-            if (getNodeKeyValue(node, cursor.cellNum) == row.Id) {
-                println("Duplicate key")
-                return
-            }
-        }
         if (numCells >= LEAF_NODE_MAX_CELLS) {
             leafNodeSplitAndInsert(cursor, row)
         } else {
@@ -679,22 +669,6 @@ class StatementExecutor {
         serialize(row, page, cursor.cellNum)
         setLeafNodeNumCells(page, numCells + 1)
     }
-
-    data class PreparedStatement(
-        val statement: String,
-        val statementStatus: StatementStatus,
-        val statementType: StatementType,
-        val table: Table,
-    )
-
-    enum class StatementType {
-        STATEMENT_INSERT, STATEMENT_SELECT, STATEMENT_UPDATE, STATEMENT_DELETE, STATEMENT_UNDEFINED
-    }
-
-    enum class StatementStatus {
-        PREPARE_SUCCESS, PREPARE_UNDEFINED
-    }
-
 
 }
 

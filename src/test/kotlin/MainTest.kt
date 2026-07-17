@@ -1,6 +1,7 @@
 import com.zxcjabka.game.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -467,11 +468,10 @@ class MainTest {
             table
         )
 
-        cp.processCommand(
-            "insert 1 user2 email2",
-            table
-        )
-
+            cp.processCommand(
+                "insert 1 user2 email2",
+                table
+            )
         val cursor = tableStart(table)
 
         assertEquals(
@@ -932,6 +932,227 @@ class MainTest {
             assertTrue(output.contains("Try .help command"))
         } finally {
             System.setOut(oldOut)
+        }
+    }
+
+    @Test
+    fun `validate select succeeds`() {
+        assertDoesNotThrow {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "select",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_SELECT,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate select rejects invalid syntax`() {
+        assertThrows<InvalidPreparedStatementException> {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "select *",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_SELECT,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate insert succeeds`() {
+        assertDoesNotThrow {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "insert 1 user email",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_INSERT,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate insert rejects duplicate id`() {
+
+        cp.processCommand("insert 1 user email", table)
+
+        assertThrows<IdAlreadyExists> {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "insert 1 another another@mail",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_INSERT,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate insert rejects invalid id`() {
+
+        assertThrows<InvalidPreparedStatementException> {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "insert abc user email",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_INSERT,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate delete succeeds`() {
+
+        cp.processCommand("insert 1 user email", table)
+
+        assertDoesNotThrow {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "delete 1",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_DELETE,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate delete rejects missing id`() {
+
+        assertThrows<IdNotFoundException> {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "delete 10",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_DELETE,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate delete rejects invalid id`() {
+
+        assertThrows<InvalidPreparedStatementException> {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "delete abc",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_DELETE,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate update succeeds`() {
+
+        cp.processCommand("insert 1 user email", table)
+
+        assertDoesNotThrow {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "update 1 set values email=test@gmail.com",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_UPDATE,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate update rejects missing row`() {
+
+        assertThrows<IdNotFoundException> {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "update 1 set values email=test@gmail.com",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_UPDATE,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate update rejects empty values`() {
+
+        cp.processCommand("insert 1 user email", table)
+
+        assertThrows<InvalidPreparedStatementException> {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "update 1 set values",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_UPDATE,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate update rejects missing set`() {
+
+       cp.processCommand("insert 1 user email", table)
+
+        assertThrows<InvalidPreparedStatementException> {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "update 1 email=test",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_UPDATE,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate update rejects invalid assignment`() {
+
+        cp.processCommand("insert 1 user email", table)
+
+        assertThrows<InvalidPreparedStatementException> {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "update 1 set values email",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_UPDATE,
+                    table
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `validate update rejects invalid id`() {
+
+        cp.processCommand("insert 1 user email", table)
+
+        assertThrows<InvalidPreparedStatementException> {
+            StatementValidator.validate(
+                PreparedStatement(
+                    "update abc set values email=test",
+                    StatementStatus.PREPARE_SUCCESS,
+                    StatementType.STATEMENT_UPDATE,
+                    table
+                )
+            )
         }
     }
 }

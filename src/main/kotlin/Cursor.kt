@@ -21,6 +21,17 @@ data class Cursor(
             }
         }
     }
+
+    fun existsById(
+        id: Int,
+    ): Boolean {
+        val page = this.table.pager.getPage(this.pageNum)
+        return !((this.cellNum >= getLeafNodeNumCells(page)) || (getNodeKeyValue(
+            page,
+            this.cellNum
+        ) != id))
+    }
+
 }
 
 fun tableStart(table: Table): Cursor {
