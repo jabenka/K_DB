@@ -1,6 +1,6 @@
 ## K_DB
 ### Sqlite clone in pure kotlin
-** to run pass database name like db_name.db**
+**to run pass database name like `db_name.db`**
 #### Possible commands:
 ###### Data commands:
 1. Insert `insert id username_val email_val` - insert data
